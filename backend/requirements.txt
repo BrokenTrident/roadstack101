@@ -1,0 +1,106 @@
+# ============================================================================
+# PYTHON DEPENDENCIES FOR DJANGO BACKEND
+# ============================================================================
+# This file lists all Python packages needed for the Django backend
+# Install with: pip install -r requirements.txt
+# PER.NOTE (DC): I prefer uv over pip, The Learner may explore this
+# on their own if they wish.
+# LINK: https://docs.astral.sh/uv/
+#
+# Format: package==version (pinned) or package>=version (minimum)
+# Pinning versions ensures consistent behavior across environments
+# PER.NOTE (DC): It can be useful to install without versioning initially, then use `pip freeze`
+# To confirm the resolved versions. This is uneeded in uv, but you may use "uv pip freeze" to
+# be backwards compatable.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# CORE FRAMEWORK
+# ----------------------------------------------------------------------------
+# Django: The main web framework
+# Link: https://docs.djangoproject.com/en/5.2/
+# - Provides ORM, admin panel, authentication, and more
+# - Version 6.0+ is the latest major release as of 2026
+# PER.NOTE (DC): Even with 6.0+ released, we will use 5 to match Django REST framework's requirements.
+Django>=5.0,<6.0
+
+# ----------------------------------------------------------------------------
+# REST API FRAMEWORK
+# ----------------------------------------------------------------------------
+# Django REST Framework (DRF): Toolkit for building REST APIs
+# Link: https://www.django-rest-framework.org
+# - Serializers: Convert Django models to/from JSON
+# - ViewSets: Simplify CRUD operations
+# - Authentication & permissions
+# - Browsable API for testing
+# PER.NOTE (DC): Personally I prefer [django-ninja](https://django-ninja.dev)
+# but DRF has a much larger ecosystem. Use what works for you
+djangorestframework>=3.16,<4.0
+
+# ----------------------------------------------------------------------------
+# API DOCUMENTATION
+# ----------------------------------------------------------------------------
+# drf-spectacular: Generate OpenAPI 3.0 schema from DRF code
+# Link: https://drf-spectacular.readthedocs.io/en/latest/readme.html
+# - Auto-generates API documentation from your code
+# - Provides Swagger UI and ReDoc interfaces
+# PER.NOTE (DC): Unneeded if using django-ninja
+drf-spectacular>=0.29,<1.0
+
+# ----------------------------------------------------------------------------
+# CORS (Cross-Origin Resource Sharing)
+# ----------------------------------------------------------------------------
+# django-cors-headers: Allow frontend to make requests to backend
+# Link: https://github.com/adamchainz/django-cors-headers
+# - Required when frontend and backend are on different domains/ports
+# - In development: frontend (localhost:3000) → backend (localhost:8000)
+# - Configure in settings.py which origins are allowed
+django-cors-headers>=4.9,<5.0
+
+# ----------------------------------------------------------------------------
+# OPTIONAL BUT RECOMMENDED
+# ----------------------------------------------------------------------------
+
+# Environment variables management
+# Link: https://github.com/HBNetwork/python-decouple
+# Helps you keep secrets out of settings.py
+# PER.NOTE (DC): They are quite a few packages which handle this, and to be fair
+# you don't require this as docker itself (and likely your deployment strategy as well) can handle this
+# python-decouple>=3.8
+
+# PostgreSQL adapter (if using PostgreSQL instead of SQLite)
+# Link: https://www.psycopg.org/docs/
+# psycopg2-binary>=2.9,<3.0
+
+# Django Debug Toolbar (helpful for development)
+# Link: https://django-debug-toolbar.readthedocs.io/en/latest/index.html
+# django-debug-toolbar>=6.0
+
+# Python WSGI HTTP Server for production (not needed for development)
+# Link: https://gunicorn.org
+# gunicorn>=22
+
+# ============================================================================
+# NOTES FOR LEARNERS
+# ============================================================================
+#
+# Installing packages:
+# 1. Add the package to this file
+# 2. Rebuild the Docker container: docker compose up --build
+#    OR install in running container: docker compose exec backend pip install -r requirements.txt
+#
+# Finding package versions:
+# - Visit PyPI: https://pypi.org/project/package-name/
+# - Check documentation for compatibility
+#
+# Version specifiers:
+# - Django==5.0.1      : Exact version (most strict)
+# - Django>=5.0,<5.1   : Allow patch updates (recommended)
+# - Django>=5.0        : Allow any newer version (risky)
+# - Django~=5.0.1      : Compatible release (>=5.0.1, <5.1.0)
+#
+# Security updates:
+# Run periodically: pip list --outdated
+# Update: pip install --upgrade package-name
+#
+# ============================================================================
