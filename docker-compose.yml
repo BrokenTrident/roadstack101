@@ -1,0 +1,220 @@
+# ============================================================================
+# DOCKER COMPOSE CONFIGURATION
+# ============================================================================
+# Docker Compose lets us define and run multi-container applications
+# Instead of running multiple "docker run" commands, we define everything here
+#
+# Key Concepts for Learners:
+# - Services: Each container (frontend, backend, database, etc.)
+# - Volumes: How we share code between host machine and containers
+# - Networks: Containers can talk to each other by service name
+# - Ports: How we access containers from our host machine (localhost)
+# ============================================================================
+
+# Version is deprecated but some tools still expect it
+# Modern docker compose (v2) doesn't require this line
+services:
+
+  # ==========================================================================
+  # FRONTEND SERVICE - Next.js Application
+  # ==========================================================================
+  frontend:
+    # ----------------------------------------------------------------------
+    # PLATFORM (for Apple Silicon Macs)
+    # ----------------------------------------------------------------------
+    # Uncomment the line below if you're on Apple Silicon (M1/M2/M3 Mac)
+    # and experiencing slow performance without Docker Desktop virtualization
+    # PER.NOTE (DC): This is specific to our company, but can be ignored if you're
+    # not on an ARM system
+    # platform: linux/arm64/v8
+
+    # ----------------------------------------------------------------------
+    # BUILD CONFIGURATION
+    # ----------------------------------------------------------------------
+    build:
+      # Context: The base directory for building (paths are relative to this)
+      context: .
+      # Dockerfile: Specific Dockerfile to use for this service
+      dockerfile: ./docker/frontend.Dockerfile
+
+    # ----------------------------------------------------------------------
+    # CONTAINER NAME
+    # ----------------------------------------------------------------------
+    # Friendly name for this container (easier than random names Docker generates)
+    # You'll see this name when you run: docker ps
+    container_name: roadstack-frontend
+
+    # ----------------------------------------------------------------------
+    # PORT MAPPING
+    # ----------------------------------------------------------------------
+    # Format: "HOST_PORT:CONTAINER_PORT"
+    # - 3000 (left): Port on YOUR computer (localhost:3000)
+    # - 3000 (right): Port inside the container (where Next.js listens)
+    # Change the left number if you want to use a different port on your machine
+    ports:
+      - "3000:3000"
+
+    # ----------------------------------------------------------------------
+    # VOLUMES (FILE SHARING)
+    # ----------------------------------------------------------------------
+    # Volumes let you share files between your computer and the container
+    # This is CRUCIAL for development: changes you make appear instantly!
+    #
+    # Format: "HOST_PATH:CONTAINER_PATH"
+    volumes:
+      # Share the frontend code directory
+      # Changes you make to files will immediately be visible in the container
+      - ./frontend:/app
+
+      # Node modules volume - IMPORTANT!
+      # This creates an "anonymous volume" for node_modules
+      # Why? node_modules can be platform-specific (Mac vs Linux)
+      # This ensures the container uses the Linux-built modules
+      # while letting you edit code freely
+      - /app/node_modules
+
+      # Alternative approach (named volume - more explicit):
+      # - frontend_node_modules:/app/node_modules
+
+    # ----------------------------------------------------------------------
+    # RESTART POLICY
+    # ----------------------------------------------------------------------
+    # "unless-stopped" means:
+    # - If container crashes, Docker will restart it automatically
+    # - If you manually stop it, it stays stopped
+    # - When you restart Docker, it starts this container
+    # Alternatives: "no", "always", "on-failure"
+    restart: unless-stopped
+
+    # ----------------------------------------------------------------------
+    # ENVIRONMENT VARIABLES (Optional)
+    # ----------------------------------------------------------------------
+    # You can set environment variables for the container
+    # Useful for API URLs, feature flags, etc.
+    # environment:
+    #   - NODE_ENV=development
+    #   - NEXT_PUBLIC_API_URL=http://backend:8000
+    #
+    # Instead of the above env 'variables', you can instead
+    # share env 'files' which the following does, choose ONLY ONE of these
+    # env_file:
+    #   - <ENV_FILE_PATH>
+
+    # ----------------------------------------------------------------------
+    # NETWORKS (Optional but useful to understand)
+    # ----------------------------------------------------------------------
+    # By default, all services are on the same network
+    # Services can reach each other using the service name as hostname
+    # Example: frontend can call "http://backend:8000" (not localhost:8000!)
+
+  # ==========================================================================
+  # BACKEND SERVICE - Django REST API
+  # ==========================================================================
+  backend:
+    # ----------------------------------------------------------------------
+    # PLATFORM (for Apple Silicon Macs)
+    # ----------------------------------------------------------------------
+    # Uncomment if needed (same as frontend explanation)
+    # platform: linux/arm64/v8
+
+    # ----------------------------------------------------------------------
+    # BUILD CONFIGURATION
+    # ----------------------------------------------------------------------
+    build:
+      context: .
+      dockerfile: ./docker/backend.Dockerfile
+
+    # ----------------------------------------------------------------------
+    # CONTAINER NAME
+    # ----------------------------------------------------------------------
+    container_name: roadstack-backend
+
+    # ----------------------------------------------------------------------
+    # PORT MAPPING
+    # ----------------------------------------------------------------------
+    # Django development server runs on port 8000
+    # Access at: http://localhost:8000
+    ports:
+      - "8000:8000"
+
+    # ----------------------------------------------------------------------
+    # VOLUMES (FILE SHARING)
+    # ----------------------------------------------------------------------
+    volumes:
+      # Share the backend code directory
+      # Changes to Python files will be detected by Django's auto-reloader
+      - ./backend:/app
+
+      # We don't need a special volume for Python packages like we do for node_modules
+      # Python packages installed with pip are not platform-specific in the same way
+      # However, if you're using a database, you might want to persist database files:
+      # - postgres_data:/var/lib/postgresql/data
+
+    # ----------------------------------------------------------------------
+    # RESTART POLICY
+    # ----------------------------------------------------------------------
+    restart: unless-stopped
+
+    # ----------------------------------------------------------------------
+    # ENVIRONMENT VARIABLES (Optional but common)
+    # ----------------------------------------------------------------------
+    # environment:
+    #   # Tell Django we're in development mode
+    #   - DEBUG=True
+    #   # Database connection string (if using PostgreSQL)
+    #   - DATABASE_URL=postgresql://user:password@db:5432/mydb
+    #   # Django secret key (use environment variable in production!)
+    #   - SECRET_KEY=your-secret-key-here
+
+    # ----------------------------------------------------------------------
+    # DEPENDS ON (Optional)
+    # ----------------------------------------------------------------------
+    # If you add a database service, you'd specify it here
+    # This ensures the database starts before the backend
+    # depends_on:
+    #   - db
+
+# ============================================================================
+# VOLUMES (Named Volumes Definition)
+# ============================================================================
+# If you use named volumes (like frontend_node_modules), define them here
+# volumes:
+#   frontend_node_modules:
+
+# ============================================================================
+# NETWORKS (Custom Networks)
+# ============================================================================
+# You can define custom networks if needed
+# By default, Compose creates a network for all services
+# networks:
+#   app_network:
+
+# ============================================================================
+# USEFUL COMMANDS FOR LEARNERS
+# ============================================================================
+# Build and start all services:
+#   docker compose up --build
+#
+# Start in detached mode (runs in background):
+#   docker compose up -d
+#
+# Stop all services:
+#   docker compose down
+#
+# View logs:
+#   docker compose logs
+#   docker compose logs frontend
+#   docker compose logs backend -f  (follow mode)
+#
+# Execute commands in a running container:
+#   docker compose exec frontend npm install
+#   docker compose exec backend python manage.py migrate
+#   docker compose exec backend python manage.py createsuperuser
+#
+# Rebuild a single service:
+#   docker compose up --build frontend
+#
+# Remove volumes (careful - deletes data!):
+#   docker compose down -v
+#
+# ============================================================================
