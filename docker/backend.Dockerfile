@@ -56,7 +56,7 @@ RUN apt-get update && apt-get install -y \
 # Set the working directory inside the container
 # All subsequent commands will run from this directory
 # This is where we'll copy our application code
-WORKDIR /app
+WORKDIR /app/core
 
 # ----------------------------------------------------------------------------
 # PYTHON DEPENDENCIES
@@ -106,11 +106,9 @@ EXPOSE 8000
 # 2. Update this CMD to point to their manage.py location
 # 3. Run migrations before starting the server (can be done in entrypoint script)
 
-# Placeholder command - Learners will replace this with their actual project
-# For a real project, they might use:
-# CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
-# Or with an entrypoint script that runs migrations first:
-# CMD ["./entrypoint.sh"]
-
-# Placeholder: Keep container alive for Learners to set up Django
-CMD ["tail", "-f", "/dev/null"]
+# Run migrations, load data, then start the server
+# Note: Only the last CMD is executed, so we use shell form to chain commands
+CMD python manage.py makemigrations && \
+    python manage.py migrate && \
+    python manage.py fetch_data && \
+    python manage.py runserver 0.0.0.0:8000
