@@ -1,0 +1,177 @@
+# ============================================================================
+# DOCKER COMPOSE CONFIGURATION - WATCH MODE
+# ============================================================================
+# This is an alternative configuration that uses Compose Watch instead of
+# traditional volume mounts for development hot-reload.
+#
+# Usage:
+#   docker compose -f docker-compose.watch.yml watch
+#   docker compose -f docker-compose.watch.yml --dry-run watch  (preview mode)
+#
+# Why a separate file?
+# --------------------
+# Volume mounts and Compose Watch serve the same purpose (sync code changes)
+# but work differently. Having both in one file causes conflicts. Separating
+# them lets you choose the approach that works best for your workflow.
+#
+# When to use this file (Compose Watch):
+# - You want explicit control over what triggers rebuilds and how
+#
+# When to use docker-compose.yml (Volume Mounts):
+# - Simpler mental model (files are just shared)
+#
+# For more info: https://docs.docker.com/compose/how-tos/file-watch/
+# ============================================================================
+
+services:
+
+  # ==========================================================================
+  # FRONTEND SERVICE - Next.js Application (Watch Mode)
+  # ==========================================================================
+  frontend:
+    # Build configuration
+    build:
+      context: .
+      dockerfile: ./docker/frontend.Dockerfile
+
+    container_name: roadstack-frontend
+
+    # Port mapping: access at http://localhost:3000
+    ports:
+      - "3000:3000"
+
+    # ----------------------------------------------------------------------
+    # COMPOSE WATCH CONFIGURATION
+    # ----------------------------------------------------------------------
+    # Instead of volume mounts, Compose Watch monitors your host filesystem
+    # and syncs/rebuilds as needed.
+    #
+    # How it works:
+    # 1. You run: docker compose -f docker-compose.watch.yml watch
+    # 2. Docker builds and starts the containers
+    # 3. Docker monitors the paths specified below
+    # 4. When files change, it takes the specified action (sync or rebuild)
+    #
+    # Actions:
+    # - sync: Copy changed files to container (fast, for code changes)
+    # - rebuild: Rebuild the entire container (slower, for dependency changes)
+    # - sync+restart: Sync files and restart the container process
+    #
+    # PER.NOTE (DC): The paths below (./frontend/src, etc.) must exist or watch will
+    # fail. These will be created when the frontend is set up.
+    # ----------------------------------------------------------------------
+    develop:
+      watch:
+        # Sync source code changes
+        # When you edit files in ./frontend/src, they're copied to /app/src
+        # Next.js hot-reload will pick up the changes automatically
+        - path: ./frontend/src
+          action: sync
+          target: /app/src
+
+        # Sync public assets
+        - path: ./frontend/public
+          action: sync
+          target: /app/public
+
+        # Rebuild when package.json changes
+        # Adding/removing npm packages requires a full rebuild to run npm install
+        - path: ./frontend/package.json
+          action: rebuild
+
+        # Rebuild when lock file changes
+        - path: ./frontend/package-lock.json
+          action: rebuild
+
+        # Sync config changes and restart
+        # Config changes don't need a full rebuild, just a process restart
+        - path: ./frontend/next.config.js
+          action: sync+restart
+          target: /app/next.config.js
+
+    restart: unless-stopped
+
+  # ==========================================================================
+  # BACKEND SERVICE - Django REST API (Watch Mode)
+  # ==========================================================================
+  backend:
+    build:
+      context: .
+      dockerfile: ./docker/backend.Dockerfile
+
+    container_name: roadstack-backend
+
+    # Port mapping: access at http://localhost:8000
+    ports:
+      - "8000:8000"
+
+    # ----------------------------------------------------------------------
+    # COMPOSE WATCH CONFIGURATION
+    # ----------------------------------------------------------------------
+    # Django's development server (runserver) has built-in auto-reload,
+    # so when we sync Python files, Django detects the change and restarts.
+    # ----------------------------------------------------------------------
+    develop:
+      watch:
+        # Sync Python source code
+        # Django's runserver will auto-reload when it detects .py changes
+        - path: ./backend
+          action: sync
+          target: /app
+          # Ignore files that don't need syncing
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - "*.pyo"
+            - .git/
+            - "*.sqlite3"
+
+        # Rebuild when dependencies change
+        # Adding new packages to requirements.txt needs pip install
+        - path: ./backend/requirements.txt
+          action: rebuild
+
+    # ----------------------------------------------------------------------
+    # NAMED VOLUME FOR DATABASE
+    # ----------------------------------------------------------------------
+    # Even in watch mode, we still need a named volume for the database
+    # to persist data across container restarts and rebuilds.
+    # Note: This is NOT a bind mount (host path), it's Docker-managed storage.
+    # ----------------------------------------------------------------------
+    volumes:
+      - sqlite_data:/app/core/db
+
+    restart: unless-stopped
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+# Named volumes persist data outside of containers.
+# This volume stores the SQLite database so your data survives rebuilds.
+# ============================================================================
+volumes:
+  sqlite_data:
+
+# ============================================================================
+# USEFUL COMMANDS FOR WATCH MODE
+# ============================================================================
+#
+# Start watching (builds and starts containers, then watches for changes):
+#   docker compose -f docker-compose.watch.yml watch
+#
+# Preview what would happen (dry-run mode):
+#   docker compose -f docker-compose.watch.yml --dry-run watch
+#
+# Watch specific services only:
+#   docker compose -f docker-compose.watch.yml watch backend
+#
+# Stop watching:
+#   Press Ctrl+C in the terminal
+#
+# View logs while watching (in another terminal):
+#   docker compose -f docker-compose.watch.yml logs -f
+#
+# Stop and remove containers:
+#   docker compose -f docker-compose.watch.yml down
+#
+# ============================================================================

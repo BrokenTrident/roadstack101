@@ -4,6 +4,47 @@
 
 ---
 
+## Our Goal: One Command to Run Everything
+
+By the end of this hour, we will understand exactly what happens when you run a single command to launch a full-stack web application. The command looks like this:
+
+```bash
+docker compose up --build
+```
+
+
+This command will:
+
+1.  Read your `docker-compose.yml` file.
+2.  Build the custom `backend` and `frontend` images using their respective `Dockerfile`s.
+3.  Start containers for each service.
+4.  Connect them on a shared network so they can communicate.
+
+Our journey is to break down this "magic" step by step, starting with the most basic Docker commands and building up to the full `docker compose` orchestration.
+
+---
+
+### Project Structure
+
+This diagram shows the key files we will be discussing. It provides a map of the repository that will be useful as we go through the workshop.
+
+```
+roadstack101/
+├── backend/                    # Django backend
+│   └── requirements.txt
+├── frontend/                   # Next.js frontend
+│   └── package.json
+├── docker/
+│   ├── backend.Dockerfile
+│   ├── frontend.Dockerfile
+│   └── README.md               # **This file**
+├── .dockerignore               # Files excluded from Docker builds
+├── docker-compose.yml          # Main config (volume mounts)
+└── docker-compose.watch.yml    # Alternative config (Compose Watch)
+```
+
+---
+
 ## Prerequisites
 
 Before starting, you need:
@@ -23,15 +64,15 @@ docker compose version
 # Expected: Docker Compose version v2.x.x or higher
 ```
 
-> **Note**: Modern Docker uses `docker compose` (with a space), not the old `docker-compose` command.
+> **Note**: Modern Docker uses `docker compose` (with a space). The older `docker-compose` (with a hyphen) command still works and now points to the same underlying implementation, so both produce identical results. You may see either syntax in tutorials online.
 
 ### A Note on File Names
 
 You'll see two naming conventions for Compose files:
-- **`compose.yml`** - Docker's official recommended name (newer)
+- **`compose.yaml`** - Docker's official recommended name (newer)
 - **`docker-compose.yml`** - The traditional name (still widely used)
 
-Both work identically. Docker looks for files in this order: `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`. We use `docker-compose.yml` in this tutorial for clarity, but you'll see `compose.yml` in Docker's official templates and documentation.
+Both work identically. Docker looks for files in this order: `compose.yaml`, `compose.yml`, `docker-compose.yaml`, `docker-compose.yml`. We use `docker-compose.yml` in this tutorial for clarity, but you'll see `compose.yaml` in Docker's official templates and documentation. See [here](https://docs.docker.com/compose/intro/compose-application-model/#the-compose-file) for further details.
 
 ---
 
@@ -62,6 +103,12 @@ docker run hello-world
 
 ### Try It: Interactive Python Container
 
+First, note our current local python setup and its version.
+
+```bash
+python3 --version
+```
+
 ```bash
 docker run -it python:3.13
 
@@ -71,6 +118,8 @@ docker run -it python:3.13
 >>> print(sys.version)
 >>> exit()
 ```
+
+After exiting, you can see this container listed in Docker Desktop's "Containers" tab (the status icon will be an empty circle outline indicating it's stopped).
 
 **Flags:**
 
@@ -82,7 +131,7 @@ docker run -it python:3.13
 docker run -d -p 8080:80 --name my-web nginx:alpine
 ```
 
-Visit http://localhost:8080 in your browser!
+Visit http://localhost:8080 in your browser.
 
 **Flags:**
 
@@ -92,24 +141,30 @@ Visit http://localhost:8080 in your browser!
 
 **Quick testing with `-P` (uppercase):**
 
-Instead of specifying exact port mappings, use `-P` to publish all exposed ports to random available ports:
+Instead of specifying exact port mappings, use `-P` to publish all exposed ports to random available ports from your system's [ephemeral port range](https://docs.docker.com/reference/cli/docker/container/run/#publish-all) (defined by `/proc/sys/net/ipv4/ip_local_port_range` on Linux).
 
 ```bash
 docker run -d -P --name quick-test nginx:alpine
 
 # Check which port was assigned
 docker ps
-# Output: 0.0.0.0:55000->80/tcp (random port like 55000)
+# Output: 0.0.0.0:55000->80/tcp (port assigned from system's ephemeral range)
 ```
 
 This is useful for:
+
 - Quick testing when you don't care about the exact port
 - Running multiple instances without port conflicts
 - CI/CD environments where port availability varies
 
+```bash
+# Cleanup the quick-test container
+docker stop quick-test && docker rm quick-test
+```
+
 **Cleanup:**
 ```bash
-# See running containers
+# See running containers (also visible in Docker Desktop's "Containers" tab)
 docker ps
 
 # Stop the container
@@ -126,11 +181,14 @@ docker rm my-web
 ### The Problem
 
 Running containers manually gets clunky:
+
 - Long commands with many flags
 - Hard to recreate the same setup
 - No customization of the container environment
 
 **Solution**: Create custom images with Dockerfiles
+
+Now, let's see how Dockerfiles help us automate this for our own project.
 
 ---
 
@@ -138,191 +196,122 @@ Running containers manually gets clunky:
 
 ### What is a Dockerfile?
 
-A **Dockerfile** is a text file containing instructions to build a custom Docker image.
+A **Dockerfile** is a text file containing instructions to build a custom Docker image. It's the recipe for your container. Instead of running `docker run` with a lot of flags, you define the configuration once in a Dockerfile.
 
-### Example: Python Script Container
+### This Project's Backend Dockerfile
 
-Create a project directory:
-```bash
-mkdir docker-demo && cd docker-demo
-```
+Let's examine this project's actual backend Dockerfile. You can find it at `docker/backend.Dockerfile`.
 
-Create `hello.py`:
-```python
-print("Hello from my custom container!")
-```
+We won't build this manually with `docker build` yet (we'll let Docker Compose do it in Part 3), but we will walk through it line-by-line to understand what it does.
 
-Create `Dockerfile`:
+Here is the file:
 ```dockerfile
+# ============================================================================
+# BACKEND DOCKERFILE - Django REST API
+# ============================================================================
 FROM python:3.13-slim
-WORKDIR /app
-COPY hello.py .
-CMD ["python", "hello.py"]
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/core
+
+COPY ./backend/requirements.txt .
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+COPY ./backend .
+
+EXPOSE 8000
+
+CMD python manage.py makemigrations && \
+    python manage.py migrate && \
+    python manage.py fetch_data && \
+    python manage.py runserver 0.0.0.0:8000
 ```
 
-Build and run:
-```bash
-# Build image
-docker build -t my-python-app .
-# Expected: Successfully built... Successfully tagged my-python-app:latest
+### Dockerfile Instructions Explained
 
-# Run it
-docker run my-python-app
-# Expected: Hello from my custom container!
-```
-
-### Dockerfile Instructions
-
-| Instruction | Purpose | Example |
-|-------------|---------|---------|
+| Instruction | Purpose | Example from our file |
+|-------------|---------|-----------------------|
 | `FROM` | Base image to start from | `FROM python:3.13-slim` |
-| `WORKDIR` | Set working directory in container | `WORKDIR /app` |
-| `COPY` | Copy files from host to container | `COPY . .` |
-| `RUN` | Execute commands during build | `RUN pip install -r requirements.txt` |
-| `CMD` | Command to run when container starts | `CMD ["python", "app.py"]` |
+| `ENV` | Set environment variables | `ENV PYTHONUNBUFFERED=1` |
+| `RUN` | Execute commands during build | `RUN apt-get update && ...` |
+| `WORKDIR` | Set working directory in container | `WORKDIR /app/core` |
+| `COPY` | Copy files from host to container | `COPY ./backend/requirements.txt .` |
 | `EXPOSE` | Document which port app uses | `EXPOSE 8000` |
-| `ENV` | Set environment variables | `ENV DEBUG=1` |
+| `CMD` | Command to run when container starts | `CMD python manage.py ...` |
 
-### Example: Web App with Dependencies
+### Line-by-Line Breakdown
 
-Create `requirements.txt`:
-```txt
-flask==3.1.0
-```
+- `FROM python:3.13-slim`
+  - Every Dockerfile starts with a `FROM` instruction. This specifies the **base image**. We're using the official `python` image, specifically the `3.13-slim` tag. "Slim" means it's a smaller version with only the essential packages, leading to a smaller final image size.
 
-Create `app.py`:
-```python
-from flask import Flask
-app = Flask(__name__)
+- `ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1`
+  - `ENV` sets environment variables inside the container.
+  - `PYTHONDONTWRITEBYTECODE=1`: Prevents Python from creating `.pyc` files. This is good for containers where we rebuild frequently.
+  - `PYTHONUNBUFFERED=1`: Ensures that Python output (like `print` statements) is sent directly to the terminal without buffering. This is critical for seeing logs in real-time.
 
-@app.route('/')
-def hello():
-    return "Hello from Flask in Docker!"
+- `RUN apt-get update && ...`
+  - `RUN` executes commands *during the build process*. We use it here to install system-level packages inside the container. `libpq-dev` and `gcc` are libraries that might be needed to install some Python packages from source.
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
-```
+- `WORKDIR /app/core`
+  - `WORKDIR` sets the working directory for all subsequent commands (`RUN`, `CMD`, `COPY`, etc.). If the directory doesn't exist, it will be created.
 
-Create `Dockerfile`:
+- `COPY ./backend/requirements.txt .`
+  - `COPY` copies files from your host machine into the container. Here, we're copying just the `requirements.txt` file into our working directory (`/app/core`).
+
+- `RUN pip install ...`
+  - Another `RUN` command, this time using `pip` to install our Python dependencies.
+
+- **The Caching Trick**: Why did we `COPY` `requirements.txt` separately before copying the rest of the code? **Layer Caching!** Docker builds images in layers. Each instruction in the Dockerfile is a layer. If a file hasn't changed, Docker uses the cached layer from the previous build.
+  - Since `requirements.txt` changes less often than our source code, we copy it first. Now, if you only change a Python file, Docker will re-use the (potentially very long) `pip install` layer, making your builds much, much faster.
+  - You can use `docker image history <image-name>` to inspect these layers and see how much space each one takes. This information is also visible in Docker Desktop under the "Images" tab.
+  - **Advanced**: There's also a `docker commit` command that lets you create a new image from a running container's current state. This is not the standard workflow (Dockerfiles are preferred for reproducibility), but it can be useful for debugging or creating quick snapshots. 
+
+- `COPY ./backend .`
+  - Now we copy the rest of our backend code into the working directory.
+
+- `EXPOSE 8000`
+  - `EXPOSE` is documentation. It tells Docker that the container listens on port 8000. It doesn't actually *publish* the port. We do that later with `docker compose` or `docker run -p`.
+
+- `CMD python ...`
+  - `CMD` specifies the default command to run when the container starts. Here, we're chaining a few commands to prepare the database and then start the Django development server.
+  - **Important**: The server must run on `0.0.0.0` to be accessible from outside the container. `localhost` or `127.0.0.1` would not work.
+
+### What About the Frontend?
+
+The `docker/frontend.Dockerfile` follows a very similar pattern, but for a Node.js application.
+
 ```dockerfile
-FROM python:3.13-slim
+FROM node:24
 WORKDIR /app
-
-# Install dependencies first (Docker caching!)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Then copy application code
-COPY app.py .
-
-EXPOSE 5000
-CMD ["python", "app.py"]
+COPY ./frontend .
+EXPOSE 3000
+CMD ["tail", "-f", "/dev/null"]
 ```
-
-Build and run:
-```bash
-docker build -t flask-app .
-docker run -p 5000:5000 flask-app
-# Visit http://localhost:5000
-```
-
-**Why copy requirements.txt first?**
-Docker caches each instruction. If you only change `app.py`, Docker reuses the cached `pip install` layer → much faster rebuilds!
-
-**Inspecting image layers:**
-
-You can see exactly what layers make up an image and how much space each takes:
-
-```bash
-# View layers (truncated commands)
-docker image history flask-app
-
-# View layers with full commands (very wide output)
-docker image history --no-trunc flask-app
-```
-
-Example output:
-```
-IMAGE          CREATED BY                                      SIZE
-a1b2c3d4e5f6   CMD ["python" "app.py"]                         0B
-<missing>      COPY app.py . # buildkit                        1.2kB
-<missing>      RUN pip install --no-cache-dir -r requirements  15MB    ← cached!
-<missing>      COPY requirements.txt . # buildkit              50B
-<missing>      WORKDIR /app                                    0B
-<missing>      # base image layers...                          125MB
-```
-
-This helps you understand:
-- Which layers are large (candidates for optimization)
-- Which layers come from your Dockerfile vs the base image
-- Why layer ordering matters for caching
-
-**Deep inspection with `docker inspect`:**
-
-For detailed information about any Docker object (image, container, volume, network), use `docker inspect`:
-
-```bash
-# Full JSON output (lots of information!)
-docker inspect flask-app
-
-# Extract specific fields using Go templates
-docker inspect --format '{{.Config.WorkingDir}}' flask-app
-# Output: /app
-
-docker inspect --format '{{json .Config.Env}}' flask-app
-# Output: ["PATH=/usr/local/bin:...", "PYTHONUNBUFFERED=1"]
-```
-
-This shows everything: environment variables, exposed ports, volumes, networking, labels, and more. The same information is available in Docker Desktop's GUI - click on any container or image to see its details in a friendlier format.
+- **`FROM node:24`**: The base image is `node` version 24 (a Long-Term Support version).
+- **`WORKDIR /app`**: A different working directory, it doesn't matter that it's the same as the backend since they are in separate, isolated containers.
+- **`COPY ./frontend .`**: Copies the frontend code. For a real application, you would first copy `package.json` and run `npm install` to take advantage of layer caching, just like we did with `requirements.txt`.
+- **`CMD ["tail", "-f", "/dev/null"]`**: This is a placeholder command that keeps the container running so you can `exec` into it and run commands like `npm install` and `npm run dev`.
 
 ### Understanding .dockerignore
 
-Just like `.gitignore` tells Git which files to ignore, `.dockerignore` tells Docker which files to exclude from the **build context**.
+Just like `.gitignore`, a `.dockerignore` file tells Docker which files to exclude from the **build context**. When you run `docker build`, the entire directory (the context) is sent to the Docker daemon. A `.dockerignore` file prevents large or sensitive files (like `.git`, `node_modules`, or `.env`) from being sent, which speeds up builds and improves security.
 
-**What is the build context?**
-When you run `docker build`, Docker sends the entire directory to the Docker daemon. This is called the "build context". Without a `.dockerignore`, everything gets sent - including `node_modules`, `.git`, and other large or sensitive files.
-
-**Why does this matter?**
-1. **Speed** - A 500MB `node_modules` folder takes time to transfer
-2. **Security** - `.env` files with secrets could accidentally end up in your image
-3. **Image size** - Unnecessary files bloat your final image
-4. **Cleanliness** - No stale build artifacts or OS-specific files
-
-**Example `.dockerignore`:**
-```
-# Version control
-.git
-.gitignore
-
-# Dependencies (rebuilt inside container)
-node_modules
-__pycache__
-
-# Environment files (NEVER include secrets in images!)
-.env
-.env.*
-
-# Build artifacts
-build/
-dist/
-.next/
-
-# IDE and OS files
-.vscode/
-.DS_Store
-```
-
-> **Best Practice**: Always create a `.dockerignore` file in your project root. We've included one in this project - check it out!
+> **Best Practice**: We have a `.dockerignore` in the project root. Take a look to see what we're excluding.
 
 ### The Problem
 
-You've built a backend... but what about:
-- A frontend service?
-- A database?
-- Connecting multiple services together?
-- Managing environment variables?
+We've automated the setup for our backend. But what about the frontend? Or a database? How do we connect them?
 
-Running multiple `docker run` commands manually is tedious.
+Running and managing multiple `docker build` and `docker run` commands would be a pain.
 
 **Solution**: Docker Compose
 
@@ -335,80 +324,97 @@ Running multiple `docker run` commands manually is tedious.
 **Docker Compose** orchestrates multiple containers as one application using a single YAML configuration file.
 
 **Key concepts:**
+
 - **Services**: Container configurations (frontend, backend, database)
 - **Volumes**: Persistent storage shared between host and containers
 - **Networks**: Communication channels between containers
 
-### docker-compose.yml Structure
+### This Project's Docker Compose File
 
+Now let's look at the `docker-compose.yml` file in the root of our project.
+This file defines our full application stack: the frontend service and the backend service.
+
+Here's a simplified version of the file:
 ```yaml
 services:
-  service-name:
-    image: image-name        # Use pre-built image
-    # OR
-    build: ./path            # Build from Dockerfile
-    ports:
-      - "host:container"     # Port mappings
-    volumes:
-      - host:container       # Volume mounts
-    networks:
-      - network-name         # Networks to join
-    depends_on:
-      - other-service        # Service dependencies
-
-volumes:
-  volume-name:               # Named volumes for persistence
-
-networks:
-  network-name:              # Custom networks for isolation
-```
-
-### Example: Multi-Service Application
-
-Create `docker-compose.yml`:
-```yaml
-services:
-  backend:
-    build: ./backend
-    ports:
-      - "5000:5000"
-    networks:
-      - app-network
-    
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: ./docker/frontend.Dockerfile
+    container_name: roadstack-frontend
     ports:
       - "3000:3000"
-    networks:
-      - app-network
-    depends_on:
-      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
 
-networks:
-  app-network:
+  backend:
+    build:
+      context: .
+      dockerfile: ./docker/backend.Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - sqlite_data:/app/core/db
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:
 ```
 
-**Commands:**
+### Service-by-Service Breakdown
+
+- **`services`**: This is the main key where we define each container that makes up our application. We have two: `frontend` and `backend`.
+
+- **`frontend:`**: This is our Next.js application.
+  - **`build:`**: Instead of pulling a pre-built image from Docker Hub (`image: ...`), we're telling Compose to build the image itself.
+    - **`context: .`**: The build context is the project's root directory.
+    - **`dockerfile: ./docker/frontend.Dockerfile`**: We point it to the specific Dockerfile to use.
+  - **`ports: - "3000:3000"`**: This maps port 3000 on your host machine to port 3000 inside the container. This is how you can access the Next.js app at `http://localhost:3000`.
+  - **`volumes:`**: This is how we enable hot-reloading. We'll discuss this in detail below.
+
+- **`backend:`**: This is our Django application.
+  - **`build:`**: Same as the frontend, we point it to our `backend.Dockerfile`.
+  - **`ports: - "8000:8000"`**: Maps your `localhost:8000` to the container's port 8000, where Django's `runserver` is listening.
+  - **`volumes:`**: We mount the backend code and also a special "named volume" for the database.
+
+- **`volumes: sqlite_data:`**: This top-level key defines the named volume used by the backend service to persist the SQLite database file.
+
+### Running the Application
+
+This is the moment we saw in the "Our Goal" section. To build and run this entire stack, you only need one command:
+
 ```bash
-# Start all services
-docker compose up
-# Expected: Creates network, builds images, starts containers
+# Build the images and start the containers
+docker compose up --build
 
-# Start in background (detached)
-docker compose up -d
+# To run in the background (detached mode)
+docker compose up --build -d
+```
 
-# View running services
+**What happens?**
+
+1. Docker Compose reads the `docker-compose.yml` file.
+2. It sees two services: `frontend` and `backend`.
+3. It runs `docker build` for each service using the specified Dockerfiles, creating a `roadstack101-frontend` and `roadstack101-backend` image.
+4. It creates a virtual network that both containers will join.
+5. It starts a container from each image.
+6. It maps the ports and attaches the volumes as specified.
+
+**Other useful commands:**
+```bash
+# View the status of your running services
 docker compose ps
 
-# View logs
+# View the logs from all services
 docker compose logs
-docker compose logs backend      # Specific service
-docker compose logs -f           # Follow mode (live)
 
-# Stop services
-docker compose stop
+# Follow the logs in real-time for one service
+docker compose logs -f backend
 
-# Stop and remove containers
+# Stop and remove the containers
 docker compose down
 ```
 
@@ -441,65 +447,48 @@ docker compose down
 
 > **Note**: Older Docker versions used "anonymous volumes" (e.g., `/app/node_modules`), but **named volumes are now recommended** for better management.
 
-### Compose Watch: Modern Hot Reload
+### Two Development Approaches: Bind Mounts vs. Watch
 
-**Compose Watch** is a newer feature that provides an alternative to volume mounts for development. Instead of sharing your entire filesystem with the container, it watches for specific changes and responds accordingly.
+This project offers two ways to handle code synchronization for development, configured in two separate files. While they achieve a similar goal (seeing your code changes in the container without a manual rebuild), they work differently.
 
-**Why separate files?**
+1.  **`docker-compose.yml`**: Uses **Bind Mounts**.
+2.  **`docker-compose.watch.yml`**: Uses **Compose Watch**.
 
-Volume mounts and Compose Watch serve the same purpose but work differently. Having both in one file causes conflicts (Docker warns that watched paths won't be monitored if they're also volume-mounted). We provide two separate files:
+#### Bind Mounts (The Traditional Approach)
 
-- **`docker-compose.yml`** - Uses volume mounts (traditional approach)
-- **`docker-compose.watch.yml`** - Uses Compose Watch (modern approach)
+As seen in `docker-compose.yml`, a bind mount directly maps a host directory into a container (e.g., `volumes: - ./backend:/app`).
 
-**How to use Compose Watch:**
+-   **Philosophy**: Implicit Sync. The container's directory *is* the host directory. It's simple and intuitive.
+-   **How it works**: The Docker engine keeps the two directories in sync. Historically, this was slow on macOS and Windows, but performance has improved dramatically with new technologies like `virtiofs`.
+
+#### Compose Watch (The Modern Approach)
+
+As seen in `docker-compose.watch.yml`, `watch` mode is configured under a `develop` key.
+
+-   **Philosophy**: Explicit Sync. You define specific rules for how the container should react to file changes.
+-   **How it works**: Instead of syncing the entire directory, `watch` listens for file change events and acts on them according to your rules.
+    -   `action: sync`: Copies only the changed files into the container.
+    -   `action: rebuild`: Triggers a full `docker build` for the service. This is perfect for when you change a dependency file like `requirements.txt`.
+
+#### How to Choose in 2026
+
+Thanks to performance improvements in Docker Desktop, **both methods are now fast and effective for development on all operating systems.** The choice is no longer about performance, but about your preferred workflow.
+
+| Approach | File | Best for... |
+|---|---|---|
+| Bind Mounts | `docker-compose.yml` | **Simplicity.** Choose this if you want a straightforward, easy-to-understand setup where the container is a direct mirror of your host files. |
+| Compose Watch | `docker-compose.watch.yml` | **Granular Control.** Choose this if you want to define explicit rules, like ignoring certain files (e.g. `node_modules`) or triggering full rebuilds on specific file changes (`package.json`). |
+
+For this workshop, you can use either. The `docker-compose.yml` file is slightly simpler to start with.
+
+**To run with Compose Watch:**
 ```bash
-# Start with watch mode (uses the watch-specific file)
 docker compose -f docker-compose.watch.yml watch
-
-# Stop watching: press Ctrl+C
 ```
-
-**Configuration example (from docker-compose.watch.yml):**
-```yaml
-services:
-  backend:
-    build: ./backend
-    develop:
-      watch:
-        # Sync source code changes (fast)
-        - path: ./backend
-          action: sync
-          target: /app
-          ignore:
-            - __pycache__/
-        # Rebuild container when dependencies change
-        - path: ./backend/requirements.txt
-          action: rebuild
-```
-
-**Watch actions:**
-| Action | When to use | What happens |
-|--------|-------------|--------------|
-| `sync` | Source code changes | Files are copied to container |
-| `rebuild` | Dependency changes | Container is rebuilt |
-| `sync+restart` | Config changes | Files synced, container restarted |
-
-**Benefits over volume mounts:**
-- Better performance, especially on macOS and Windows
-- No file permission issues between host and container
-- Explicit control over what triggers rebuilds
-- Cleaner separation of concerns
-
-**When to use which:**
-| Approach | File | Best for |
-|----------|------|----------|
-| Volume Mounts | `docker-compose.yml` | Linux, simple setup, need all files accessible |
-| Compose Watch | `docker-compose.watch.yml` | macOS/Windows, explicit rebuild control |
 
 ### Service Communication
 
-Services on the same network can reach each other by service name:
+Services on the same network can reach each other by service name. The container port is used, not the host port that is published.
 
 ```python
 # In backend, calling frontend:
@@ -508,12 +497,14 @@ response = requests.get('http://frontend:3000/api')
 
 ```javascript
 // In frontend, calling backend:
-fetch('http://backend:5000/data')
+// We use port 8000 because that's the port the backend container exposes
+fetch('http://backend:8000/data')
 ```
 
 ### Dry Run Mode: Preview Without Executing
 
 The `--dry-run` flag lets you see what Docker Compose **would do** without actually doing it. This is invaluable for:
+
 - Understanding what a command will create/modify/delete
 - Learning how Docker Compose works
 - Verifying your configuration before running it
@@ -536,162 +527,86 @@ docker compose --dry-run down
 
 **Example output:**
 ```
-[+] Running 4/4
- ✔ DRY-RUN MODE -  Network roadstack101_default       Created
- ✔ DRY-RUN MODE -  Volume "roadstack101_sqlite_data"  Created
- ✔ DRY-RUN MODE -  Container roadstack-frontend       Created
- ✔ DRY-RUN MODE -  Container roadstack-backend        Created
-end of 'compose up' output, interactive run is not supported in dry-run mode
+[+] Running 8/8
+ ✔ DRY-RUN MODE -  ==> ==> writing image dryRun-...
+ ✔ DRY-RUN MODE -  ==> ==> naming to roadstack101-frontend
+ ✔ DRY-RUN MODE -  backend                                                               Built
+ ✔ DRY-RUN MODE -  frontend                                                              Built
+ ✔ DRY-RUN MODE -  Network roadstack101_default                                          Created
+ ✔ DRY-RUN MODE -  Volume "roadstack101_sqlite_data"                                     Created
+ ✔ DRY-RUN MODE -  Container roadstack-frontend                                          Started
+ ✔ DRY-RUN MODE -  Container roadstack-backend                                           Started
 ```
 
 Notice the `DRY-RUN MODE` prefix on each line - this confirms nothing was actually created.
 
-> **Tip**: Always run `--dry-run` first when learning a new command or working with an unfamiliar compose file!
+> **Tip**: It's useful to run `--dry-run` first when learning a new command or working with an unfamiliar compose file!
 
 ---
 
-## Part 4: Our Full-Stack Application
+## Part 4: Your Daily Development Workflow
 
-Now let's apply everything to our Django + Next.js project.
+Now that you have the application running, here is a cheat sheet of common commands for interacting with the services.
 
-### Project Structure
+### Common Commands
 
-```
-roadstack101/
-├── backend/                    # Django backend
-│   └── requirements.txt
-├── frontend/                   # Next.js frontend
-│   └── package.json
-├── docker/
-│   ├── backend.Dockerfile
-│   ├── frontend.Dockerfile
-│   └── README.md               # This file!
-├── .dockerignore               # Files excluded from Docker builds
-├── docker-compose.yml          # Main config (volume mounts)
-└── docker-compose.watch.yml    # Alternative config (Compose Watch)
-```
-
-### Backend Service
-
-See `docker/backend.Dockerfile` for the full configuration. Key points:
-- Base: `python:3.13-slim`
-- Installs system dependencies (PostgreSQL libs, GCC)
-- Copies `requirements.txt` first (caching!)
-- Runs Django dev server on `0.0.0.0:8000`
-
-### Frontend Service
-
-See `docker/frontend.Dockerfile` for the full configuration. Key points:
-- Base: `node:24`
-- Will run Next.js dev server on `0.0.0.0:3000`
-
-### Docker Compose Configuration
-
-We provide two compose files for different development approaches:
-
-**`docker-compose.yml`** (Volume Mounts - Traditional):
-- Shares host directories directly with containers
-- Simple mental model - files are just shared
-- Good for Linux, works everywhere
-
-**`docker-compose.watch.yml`** (Compose Watch - Modern):
-- Watches for changes and syncs/rebuilds explicitly
-- Better performance on macOS/Windows
-- More control over what triggers rebuilds
-
-Both configure:
-- **Backend**: Port 8000, SQLite persistence
-- **Frontend**: Port 3000
-- **Networks**: Automatic communication between services
-
-### Getting Started
-
-**Option A: Using Volume Mounts (Recommended for beginners)**
-```bash
-# Preview what will happen (dry-run)
-docker compose --dry-run up
-# Expected: Shows containers/networks/volumes that WOULD be created
-
-# Build and start services
-docker compose up --build
-# Expected: Both services start, see logs from each
-
-# Or start in background
-docker compose up -d
-```
-
-**Option B: Using Compose Watch (Recommended for macOS/Windows)**
-```bash
-# Preview what will happen
-docker compose -f docker-compose.watch.yml --dry-run watch
-
-# Start with file watching
-docker compose -f docker-compose.watch.yml watch
-# Expected: Builds, starts, then watches for file changes
-# Press Ctrl+C to stop
-```
-
-**Check status (works with either approach):**
-```bash
-docker compose ps
-# Expected: 
-# NAME                   STATUS    PORTS
-# roadstack-backend      running   0.0.0.0:8000->8000/tcp
-# roadstack-frontend     running   0.0.0.0:3000->3000/tcp
-
-# View logs
-docker compose logs -f backend
-```
-
-### Development Workflow
-
-**Start services:**
-```bash
-docker compose up -d
-```
+The `docker compose exec` command is your main tool for running commands *inside* a running container.
 
 **Run Django commands:**
+
+The other tutorials will speak to these.
+
 ```bash
-# Create migrations
+# Create migrations for your models
 docker compose exec backend python manage.py makemigrations
 
-# Apply migrations
+# Apply migrations to the database
 docker compose exec backend python manage.py migrate
 
-# Create superuser
+# Create an admin user
 docker compose exec backend python manage.py createsuperuser
 
-# Django shell
+# Open a Django shell
 docker compose exec backend python manage.py shell
 ```
 
 **Run frontend commands:**
 ```bash
-# Install package
+# Install a new npm package
 docker compose exec frontend npm install axios
 
-# Run any npm command
+# Run any npm command (e.g., a build script)
 docker compose exec frontend npm run build
 ```
 
-**Open a shell in a container:**
+**Open an interactive shell in a container:**
+This is useful for debugging or running multiple commands.
 ```bash
+# Open a bash shell in the backend container
 docker compose exec backend bash
+
+# Open a sh shell in the frontend container
 docker compose exec frontend sh
 ```
 
+### Monitoring and Management
+
 **View logs:**
 ```bash
-docker compose logs -f              # All services
-docker compose logs -f backend      # Specific service
+# Follow the logs for all services
+docker compose logs -f
+
+# Follow the logs for a specific service
+docker compose logs -f backend
 ```
 
-**Restart a service:**
+**Restart a single service:**
 ```bash
 docker compose restart backend
 ```
 
-**Rebuild after Dockerfile changes:**
+**Rebuild after changing a Dockerfile:**
+If you make changes to `backend.Dockerfile` or `frontend.Dockerfile`, you need to rebuild the image.
 ```bash
 docker compose up --build backend
 ```
@@ -701,152 +616,99 @@ docker compose up --build backend
 docker compose down
 ```
 
-**Stop and remove volumes (⚠️ deletes data!):**
+**Stop and delete all data (!!!USE WITH CAUTION!!!):**
+This command stops the containers and also removes the named volume `sqlite_data`, deleting your database.
 ```bash
 docker compose down -v
 ```
 
 ### Code Changes and Hot Reload
 
+This is a reminder of the two development approaches you can use.
+
 **With Volume Mounts (`docker-compose.yml`):**
-1. Edit code on your host machine
-2. Changes automatically sync to containers
-3. Django/Next.js auto-reload on changes
-4. No rebuild needed!
+
+1. Run `docker compose up -d`.
+2. Edit code on your host machine.
+3. Changes automatically sync to the containers.
+4. Django and Next.js will detect the changes and auto-reload.
 
 **With Compose Watch (`docker-compose.watch.yml`):**
-1. Edit code on your host machine
-2. Docker detects the change and syncs files (or rebuilds if needed)
-3. Django/Next.js auto-reload on changes
-4. More explicit control, better performance on macOS/Windows
+
+1. Run `docker compose -f docker-compose.watch.yml watch`.
+2. Edit code on your host machine.
+3. Docker detects the change and either syncs the file or rebuilds the container, based on the rules in the `watch` section.
+4. Django and Next.js will auto-reload.
 
 ---
 
-## Quick Reference
+## Key Takeaways
 
-### Docker Commands
+### The Journey
 
-```bash
-# Images
-docker images                       # List images
-docker build -t name .             # Build image
-docker image history image-name    # View image layers
-docker image history --no-trunc image-name  # View layers (full commands)
-docker inspect image-name          # Detailed image info (JSON)
-docker rmi image-name              # Remove image
+1. **Docker CLI** → Run pre-built images, but manual and clunky.
+2. **Dockerfile** → Build custom, reproducible images, but still managing one container at a time.
+3. **Docker Compose** → Orchestrate a full multi-service application with a single command.
 
-# Containers
-docker ps                          # List running containers
-docker ps -a                       # List all containers (including stopped)
-docker ps -q                       # List only container IDs (useful for scripting)
-docker run -it image               # Run interactively
-docker run -d image                # Run detached
-docker run -d -P image             # Run with random ports (ephemeral)
-docker stop container              # Stop container
-docker rm container                # Remove container
-docker logs container              # View logs
-docker exec -it container bash     # Open shell in container
-docker inspect container           # Detailed container info (JSON)
-docker stats                       # Live CPU/memory usage (all containers)
-docker stats --no-stream           # Single snapshot (not live)
+### Core Concepts
 
-# Cleanup
-docker system prune                # Remove unused data
-docker system prune -a             # Remove all unused images
-```
+- **Image**: A blueprint or recipe for your environment (built from a Dockerfile).
+- **Container**: A live, running instance of an image.
+- **Volume**: A mechanism for persisting data outside a container's ephemeral filesystem.
+- **Network**: A private communication channel that allows containers to talk to each other.
 
-### Docker Compose Commands
+### Why Docker?
 
-```bash
-# Lifecycle (using default docker-compose.yml)
-docker compose build               # Build/rebuild services
-docker compose up                  # Create and start services
-docker compose up -d               # Start detached
-docker compose --dry-run up        # Preview what would happen
-docker compose start               # Start existing services
-docker compose stop                # Stop services
-docker compose restart             # Restart services
-docker compose down                # Stop and remove containers
-docker compose down -v             # Also remove volumes
-
-# Using Compose Watch (separate file)
-docker compose -f docker-compose.watch.yml watch
-docker compose -f docker-compose.watch.yml --dry-run watch
-
-# Monitoring
-docker compose ps                  # List services
-docker compose logs                # View logs
-docker compose logs -f service     # Follow logs for service
-
-# Execution
-docker compose exec service cmd    # Run command in service
-docker compose run service cmd     # Run one-off command
-```
+- **Consistency** - It works the same on your machine, your teammate's machine, and in the cloud.
+- **Isolation** - No more "it works on my machine!" problems caused by dependency conflicts.
+- **Speed** - New developers can be productive in minutes instead of spending a day on setup.
+- **Simplicity** - The entire application stack is defined and managed in one place.
 
 ---
 
-## Going Further: Advanced Topics
+## Next Steps
 
-This section covers advanced patterns you might encounter or want to explore later.
+1. **Explore the detailed comments** in the project files:
+
+   - `docker/backend.Dockerfile`
+   - `docker/frontend.Dockerfile`
+   - `docker-compose.yml`
+   - `docker-compose.watch.yml`
+
+2. **Experiment**:
+
+   - Add a new Python package to `backend/requirements.txt`, then run `docker compose up --build backend` to see the change.
+   - Add an environment variable to a service in `docker-compose.yml`.
+   - Advanced: Try to add a new service, like a Redis cache.
+
+3. **Learn more**:
+
+   - [Official Docker Documentation](https://docs.docker.com/)
+   - [Docker Compose Documentation](https://docs.docker.com/compose/)
+
+---
+
+## Appendix A: Advanced Topics
+
+This section covers advanced patterns you might encounter or want to explore after mastering the basics.
 
 ### Reverse Proxies (Traefik)
 
-In production-like setups, you often want:
+In production-like setups, you often want a single entry point to your application:
+
 - Frontend at `localhost` (no port number)
 - Backend API at `localhost/api`
-- Database admin at `db.localhost`
 
-This is achieved using a **reverse proxy** - a service that routes incoming requests to the appropriate container based on the URL.
-
-**Traefik** is a popular choice that integrates beautifully with Docker:
-
-```yaml
-services:
-  proxy:
-    image: traefik:v3.6
-    command: --providers.docker
-    ports:
-      - 80:80
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-
-  backend:
-    build: ./backend
-    labels:
-      # Route localhost/api/* to this service
-      traefik.http.routers.backend.rule: Host(`localhost`) && PathPrefix(`/api`)
-      traefik.http.services.backend.loadbalancer.server.port: 8000
-
-  frontend:
-    build: ./frontend
-    labels:
-      # Route all other localhost requests to this service
-      traefik.http.routers.frontend.rule: Host(`localhost`)
-      traefik.http.services.frontend.loadbalancer.server.port: 3000
-```
-
-**How it works:**
-1. Traefik listens on port 80
-2. It reads Docker container labels to learn routing rules
-3. Requests to `localhost/api/*` go to the backend
-4. All other requests to `localhost` go to the frontend
-5. No port numbers needed in URLs!
+This is achieved using a **reverse proxy**. **Traefik** is a popular choice that integrates beautifully with Docker. It reads container "labels" to automatically route traffic.
 
 **Why we don't use it in this tutorial:**
-- Adds complexity for beginners
-- Requires understanding of routing rules and DNS
-- Port-based access (`:3000`, `:8000`) is simpler for learning
 
-**When you'd want it:**
-- Simulating production environment
-- Running multiple services on the same port
-- When you need clean URLs without port numbers
-
-> **Note**: Docker's official templates use Traefik. See their [docker/getting-started-todo-app](https://github.com/docker/getting-started-todo-app) for a full example.
+- It adds an extra layer of complexity for beginners.
+- Port-based access (`:3000`, `:8000`) is simpler and more explicit for learning.
 
 ### Health Checks
 
-Health checks let Docker know when a service is actually ready (not just running):
+A `healthcheck` instruction in your `docker-compose.yml` file tells Docker when your service is *actually ready* to receive traffic, not just when the container has started. This is crucial for preventing race conditions, for example, ensuring a database container is fully initialized before the backend tries to connect to it.
 
 ```yaml
 services:
@@ -865,11 +727,9 @@ services:
         condition: service_healthy  # Wait for DB to be truly ready
 ```
 
-This prevents race conditions where your backend starts before the database is ready to accept connections.
-
 ### Monitoring Resource Usage
 
-Use `docker stats` to see live CPU, memory, and network usage for your containers:
+The `docker stats` command provides a live view of the CPU, memory, and network usage of your running containers. It's an invaluable tool for debugging performance issues or identifying resource-hungry services. The same information is available in Docker Desktop's "Containers" view, which shows resource graphs for each container.
 
 ```bash
 # Live updating stats (press Ctrl+C to exit)
@@ -879,60 +739,64 @@ docker stats
 docker stats --no-stream
 ```
 
-Example output:
-```
-CONTAINER ID   NAME                CPU %     MEM USAGE / LIMIT     MEM %     NET I/O
-d869adc3ecce   roadstack-backend   0.15%     85.2MiB / 3.8GiB      2.18%     1.2MB / 850kB
-693a741f7a86   roadstack-frontend  0.08%     120.5MiB / 3.8GiB     3.07%     2.1MB / 1.5MB
-```
+### Alternatives to Docker
 
-This helps you:
-- Identify memory leaks or CPU-heavy processes
-- Right-size container resource limits
-- Debug performance issues
+Docker is the industry standard, but there are alternatives worth knowing about:
 
-The same information is available in Docker Desktop's GUI under the "Containers" view.
+- **[Podman](https://podman.io)** - An open-source, daemonless container engine developed by Red Hat. It's compatible with Docker commands and doesn't require root privileges. See [What is Podman?](https://www.redhat.com/en/topics/containers/what-is-podman) for more details.
 
 ---
 
-## Key Takeaways
+## Appendix B: Command Quick Reference
 
-### The Journey
+### Docker Commands
 
-1. **Docker CLI** → Run pre-built images, but manual and clunky
-2. **Dockerfile** → Build custom images, but still managing multiple containers manually
-3. **Docker Compose** → Orchestrate everything with one command
+```bash
+# Images
+docker images                       # List images
+docker build -t name .             # Build image
+docker image history image-name    # View image layers
+docker rmi image-name              # Remove image
 
-### Core Concepts
+# Containers
+docker ps                          # List running containers
+docker ps -a                       # List all containers
+docker run -it image               # Run interactively
+docker run -d image                # Run detached
+docker stop container              # Stop container
+docker rm container                # Remove container
+docker logs container              # View logs
+docker exec -it container bash     # Open shell in container
+docker inspect container           # Detailed container info (JSON, also in Desktop GUI)
 
-- **Image**: Blueprint (built from Dockerfile)
-- **Container**: Running instance (isolated process)
-- **Volume**: Persistent storage (survives container deletion)
-- **Network**: Communication between containers
+# Monitoring
+docker stats                       # Live CPU/memory usage (Ctrl+C to exit)
+docker stats --no-stream           # Single snapshot
 
-### Why Docker?
+# System
+docker system prune                # Remove unused data (containers, networks)
+docker system prune -a             # Also remove unused images
+```
 
-✅ **Consistency** - Works the same everywhere
-✅ **Isolation** - No dependency conflicts
-✅ **Speed** - New developers productive in minutes
-✅ **Simplicity** - One command runs entire stack
+### Docker Compose Commands
 
----
+```bash
+# Lifecycle (using default docker-compose.yml)
+docker compose up                  # Create and start services
+docker compose up -d               # Start detached
+docker compose up --build          # Build images then start
+docker compose down                # Stop and remove containers
+docker compose down -v             # Also remove volumes (deletes data)
+docker compose start / stop / restart
 
-## Next Steps
+# Using Compose Watch (with the watch-specific file)
+docker compose -f docker-compose.watch.yml watch
 
-1. **Explore the detailed comments** in the project files:
-   - `docker/backend.Dockerfile` - Backend container setup
-   - `docker/frontend.Dockerfile` - Frontend container setup
-   - `docker-compose.yml` - Service orchestration
-   - `backend/requirements.txt` - Python dependencies
+# Monitoring
+docker compose ps                  # List services
+docker compose logs                # View logs for all services
+docker compose logs -f service     # Follow logs for a service
 
-2. **Experiment**:
-   - Add a Python package to `requirements.txt`, rebuild
-   - Modify Django settings, see auto-reload
-   - Add environment variables to `docker-compose.yml`
-
-3. **Learn more**:
-   - [Official Docker Documentation](https://docs.docker.com/)
-   - [Docker Compose Documentation](https://docs.docker.com/compose/)
-   - [Docker Hub](https://hub.docker.com/)
+# Execution
+docker compose exec service cmd    # Run command in a running service
+```

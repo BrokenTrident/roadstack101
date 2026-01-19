@@ -11,8 +11,27 @@
 # - Ports: How we access containers from our host machine (localhost)
 # ============================================================================
 
-# Version is deprecated but some tools still expect it
-# Modern docker compose (v2) doesn't require this line
+# ============================================================================
+# FILE NAMING NOTE
+# ============================================================================
+# Docker's official convention is now "compose.yaml" (without "docker-" prefix).
+# We use "docker-compose.yml" for clarity in this tutorial, but both work.
+# See: https://docs.docker.com/compose/compose-file/
+# ============================================================================
+
+# ============================================================================
+# DEVELOPMENT APPROACH: VOLUME MOUNTS
+# ============================================================================
+# This file uses VOLUME MOUNTS for development hot-reload. Your host files
+# are shared directly with the container - changes appear instantly.
+#
+# For the alternative COMPOSE WATCH approach, see: docker-compose.watch.yml
+#
+# Quick comparison:
+# - Volume Mounts (this file): Simple, shares entire directories
+# - Compose Watch (other file): Explicit control over sync/rebuild rules
+# ============================================================================
+
 services:
 
   # ==========================================================================
@@ -66,7 +85,7 @@ services:
       # Changes you make to files will immediately be visible in the container
       - ./frontend:/app
 
-      # Node modules volume - IMPORTANT!
+      # Node modules volume - **IMPORTANT**
       # This creates an "anonymous volume" for node_modules
       # Why? node_modules can be platform-specific (Mac vs Linux)
       # This ensures the container uses the Linux-built modules
@@ -145,9 +164,13 @@ services:
       # Changes to Python files will be detected by Django's auto-reloader
       - ./backend:/app
 
-      # We don't need a special volume for Python packages like we do for node_modules
-      # Python packages installed with pip are not platform-specific in the same way
-      # However, if you're using a database, you might want to persist database files:
+      # SQLite database persistence (named volume)
+      # This ensures your database survives container restarts and rebuilds
+      # Without this, all data would be lost when you run "docker compose down"
+      # The database file will be stored at /app/core/db/db.sqlite3 in the container
+      - sqlite_data:/app/core/db
+
+      # Alternative for PostgreSQL (if you switch to PostgreSQL later):
       # - postgres_data:/var/lib/postgresql/data
 
     # ----------------------------------------------------------------------
@@ -177,9 +200,24 @@ services:
 # ============================================================================
 # VOLUMES (Named Volumes Definition)
 # ============================================================================
-# If you use named volumes (like frontend_node_modules), define them here
-# volumes:
-#   frontend_node_modules:
+# Named volumes must be declared here at the root level
+# These volumes persist data across container restarts and rebuilds
+# Location: Managed by Docker (usually in /var/lib/docker/volumes/)
+#
+# To inspect a volume: docker volume inspect roadstack101_sqlite_data
+# To backup: docker compose exec backend cp /app/core/db/db.sqlite3 /app/backup.sqlite3
+# To delete: docker compose down -v (WARNING: This deletes ALL data!)
+volumes:
+  # SQLite database storage
+  # This volume stores the SQLite database file, ensuring data persistence
+  # Without this, database would be recreated (empty) every time you rebuild
+  sqlite_data:
+
+  # Example: If you were using PostgreSQL instead
+  # postgres_data:
+
+  # Example: If you want to persist uploaded files/media
+  # media_files:
 
 # ============================================================================
 # NETWORKS (Custom Networks)
@@ -192,29 +230,32 @@ services:
 # ============================================================================
 # USEFUL COMMANDS FOR LEARNERS
 # ============================================================================
-# Build and start all services:
-#   docker compose up --build
 #
-# Start in detached mode (runs in background):
-#   docker compose up -d
+# STARTING SERVICES (this file - volume mounts):
+#   docker compose up --build           # Build and start all services
+#   docker compose up -d                # Start in background (detached)
+#   docker compose --dry-run up         # Preview what would happen (no changes)
 #
-# Stop all services:
-#   docker compose down
+# USING COMPOSE WATCH (alternative file):
+#   docker compose -f docker-compose.watch.yml watch
+#   docker compose -f docker-compose.watch.yml --dry-run watch
 #
-# View logs:
-#   docker compose logs
-#   docker compose logs frontend
-#   docker compose logs backend -f  (follow mode)
+# STOPPING SERVICES:
+#   docker compose down                 # Stop and remove containers
+#   docker compose down -v              # Also remove volumes (deletes data!)
 #
-# Execute commands in a running container:
+# VIEWING LOGS:
+#   docker compose logs                 # All services
+#   docker compose logs frontend        # Specific service
+#   docker compose logs backend -f      # Follow mode (live)
+#
+# RUNNING COMMANDS IN CONTAINERS:
 #   docker compose exec frontend npm install
 #   docker compose exec backend python manage.py migrate
 #   docker compose exec backend python manage.py createsuperuser
 #
-# Rebuild a single service:
-#   docker compose up --build frontend
-#
-# Remove volumes (careful - deletes data!):
-#   docker compose down -v
+# REBUILDING:
+#   docker compose up --build           # Rebuild all services
+#   docker compose up --build frontend  # Rebuild specific service
 #
 # ============================================================================

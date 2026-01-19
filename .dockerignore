@@ -1,0 +1,130 @@
+# ============================================================================
+# DOCKER IGNORE FILE
+# ============================================================================
+# This file tells Docker which files/directories to EXCLUDE from the build
+# context when building images. Think of it like .gitignore, but for Docker.
+#
+# Why does this matter?
+# ---------------------
+# When you run "docker build", Docker sends the entire directory (the "build
+# context") to the Docker daemon. Large or unnecessary files slow this down
+# and can accidentally include sensitive data in your images.
+#
+# Benefits of .dockerignore:
+# 1. Faster builds (smaller context = faster transfer)
+# 2. Smaller images (unnecessary files not included)
+# 3. Security (secrets and credentials excluded)
+# 4. Cleaner builds (no local artifacts polluting the image)
+#
+# For more info: https://docs.docker.com/build/concepts/context/#dockerignore-files
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# VERSION CONTROL
+# ----------------------------------------------------------------------------
+# Git history and metadata aren't needed inside containers
+.git
+.gitignore
+
+# ----------------------------------------------------------------------------
+# IDE AND EDITOR FILES
+# ----------------------------------------------------------------------------
+# These are developer-specific settings that shouldn't be in images
+.vscode
+.vs
+.idea
+*.swp
+*.swo
+*~
+
+# ----------------------------------------------------------------------------
+# ENVIRONMENT AND SECRETS
+# ----------------------------------------------------------------------------
+# CRITICAL: Never include these in your images!
+# Environment files often contain passwords, API keys, and other secrets
+.env
+.env.*
+*.env
+secrets.dev.yaml
+values.dev.yaml
+
+# ----------------------------------------------------------------------------
+# DOCKER FILES
+# ----------------------------------------------------------------------------
+# Docker configuration files aren't needed inside containers
+# (the Dockerfile has already been used to build the image)
+Dockerfile*
+docker-compose*
+compose.y*ml
+.dockerignore
+
+# ----------------------------------------------------------------------------
+# DEPENDENCIES (Node.js)
+# ----------------------------------------------------------------------------
+# node_modules should be rebuilt inside the container to ensure correct
+# platform-specific binaries (e.g., Linux vs macOS)
+**/node_modules
+
+# Package manager logs
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+
+# ----------------------------------------------------------------------------
+# DEPENDENCIES (Python)
+# ----------------------------------------------------------------------------
+# Python virtual environments and caches
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.Python
+venv
+.venv
+env
+*.egg-info
+
+# ----------------------------------------------------------------------------
+# BUILD ARTIFACTS
+# ----------------------------------------------------------------------------
+# Build outputs are generated fresh during the Docker build process
+**/build
+**/dist
+**/.next
+**/.cache
+**/obj
+
+# ----------------------------------------------------------------------------
+# TESTING AND COVERAGE
+# ----------------------------------------------------------------------------
+# Test artifacts and coverage reports
+**/coverage
+**/.coverage
+**/.pytest_cache
+**/.nyc_output
+htmlcov
+
+# ----------------------------------------------------------------------------
+# DOCUMENTATION
+# ----------------------------------------------------------------------------
+# Documentation files aren't needed to run the application
+README.md
+LICENSE
+CHANGELOG.md
+docs/
+
+# ----------------------------------------------------------------------------
+# TEMPORARY FILES
+# ----------------------------------------------------------------------------
+# Temporary and backup files
+*.tmp
+*.temp
+*.log
+temp/
+
+# ----------------------------------------------------------------------------
+# OS-SPECIFIC FILES
+# ----------------------------------------------------------------------------
+# Operating system generated files
+.DS_Store
+Thumbs.db
