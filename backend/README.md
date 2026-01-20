@@ -11,7 +11,7 @@ A comprehensive tutorial for building a Django REST API with a books and authors
 - [Step 3: Configure Settings](#step-3-configure-settings)
 - [Step 4: Define Models](#step-4-define-models)
 - [Step 5: Create Serializers](#step-5-create-serializers)
-- [Step 67: Build ViewSets](#step-6-build-viewsets)
+- [Step 6: Build ViewSets](#step-6-build-viewsets)
 - [Step 7: Configure URLs](#step-7-configure-urls)
 - [Step 8: Frontend Options](#step-8-frontend-options)
 - [Step 9: Create Sample Data with Fixtures](#step-9-create-sample-data-with-fixtures)
@@ -55,8 +55,7 @@ backend/
 │       ├── views.py         # HTML views
 │       ├── urls.py          # URL patterns
 │       ├── admin.py         # Admin panel config
-│       ├── templates/       # HTML templates
-│       └── management/      # Custom commands
+│       └── templates/       # HTML templates
 ```
 ---
 
@@ -707,9 +706,16 @@ docker compose up
 
 The server will start at `http://127.0.0.1:8000/`
 
+### Initialize Data
+
+```bash
+python manage.py loaddata initial_data 
+```
+
 ### Test Endpoints
 
 #### 1. View the Home Page
+
 ```bash
 # Open in browser
 http://127.0.0.1:8000/home/
