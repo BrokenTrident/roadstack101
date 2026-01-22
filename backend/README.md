@@ -5,12 +5,13 @@ A comprehensive tutorial for building a Django REST API with a books and authors
 ## Table of Contents
 - [Prerequisites](#prerequisites)
 - [Project Setup](#project-setup)
+- [System Flow](#system-flow)
 - [Step 1: Install Dependencies](#step-1-install-dependencies)
 - [Step 2: Create Django Project and the Books App](#step-2-create-django-project)
 - [Step 3: Configure Settings](#step-3-configure-settings)
 - [Step 4: Define Models](#step-4-define-models)
 - [Step 5: Create Serializers](#step-5-create-serializers)
-- [Step 67: Build ViewSets](#step-6-build-viewsets)
+- [Step 6: Build ViewSets](#step-6-build-viewsets)
 - [Step 7: Configure URLs](#step-7-configure-urls)
 - [Step 8: Frontend Options](#step-8-frontend-options)
 - [Step 9: Create Sample Data with Fixtures](#step-9-create-sample-data-with-fixtures)
@@ -54,13 +55,47 @@ backend/
 │       ├── views.py         # HTML views
 │       ├── urls.py          # URL patterns
 │       ├── admin.py         # Admin panel config
-│       ├── templates/       # HTML templates
-│       └── management/      # Custom commands
+│       └── templates/       # HTML templates
 ```
+---
+
+## System Flow
+
+Below is a basic flowchart that demonstrates the basic flow of the system we have built:
+
+<div align="center">
+
+![Flowchart](resources/sys_flow.png)
+
+**Figure 1** - [Basic System Flow](resources/system-flow.md)
+
+</div>
 
 ---
 
 ## Step 1: Install Dependencies
+
+### Create virtual environment
+
+**On Mac/Linux:**
+```bash
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+```
+
+**On Windows:**
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+venv\Scripts\activate
+```
+
+Once activated, you should see `(venv)` at the beginning of your command prompt.
 
 ### Create requirements.txt
 
@@ -74,11 +109,11 @@ pip install -r requirements.txt
 Or install individually:
 
 ```bash
-pip install "Django>=5.0,<6.0"
-pip install "djangorestframework>=3.16,<4.0"
-pip install "drf-yasg>=1.21,<2.0"
-pip install "django-cors-headers>=4.9,<5.0"
-pip install "django-filter>=24.3,<25.0"
+pip install Django
+pip install djangorestframework
+pip install drf-yasg
+pip install django-cors-headers
+pip install django-filter
 ```
 
 **Key Packages:**
@@ -134,7 +169,7 @@ INSTALLED_APPS = [
 
 ### Add CORS Middleware
 
-Insert `corsheaders.middleware.CorsMiddleware` in MIDDLEWARE (after SecurityMiddleware):
+Insert `corsheaders.middleware.CorsMiddleware` in MIDDLEWARE (after SecurityMiddleware preferably):
 
 ```python
 MIDDLEWARE = [
@@ -160,7 +195,7 @@ CORS_ALLOW_ALL_ORIGINS = True  # For development only!
 # ]
 ```
 
-Note: `CORS_ALLOW_ALL_ORIGINS = True` is only to be used for development purposes. In our case, this will do for now.
+Note: `CORS_ALLOW_ALL_ORIGINS = True` is only to be used for development purposes. In production, this creates a security vulnerability as any website can access your API. Always use `CORS_ALLOWED_ORIGINS` with specific domains in production.
 
 ### Configure REST Framework Pagination
 
@@ -413,11 +448,11 @@ This project includes basic Django templates for viewing data in the browser. Th
 
 These templates are useful for quick testing and demonstrations, but **they are optional and not the recommended approach for production applications**.
 
-### Recommended: Next.js Frontend
+### Recommended: Any React Frontend
 
-For a modern, production-ready frontend, we recommend building a separate **Next.js** application that consumes this Django REST API.
+For a modern, production-ready frontend, we recommend building a separate frontend application. Our preferred in our stack is **Next.js**. This then consumes this Django REST API.
 
-**Benefits of Next.js:**
+**Benefits of a React Frontend:**
 - *Better separation of concerns (backend/frontend)* - This proves to be very import as it regards to progressive development of the aspects of your application.
 
 
@@ -671,9 +706,16 @@ docker compose up
 
 The server will start at `http://127.0.0.1:8000/`
 
+### Initialize Data
+
+```bash
+python manage.py loaddata initial_data 
+```
+
 ### Test Endpoints
 
 #### 1. View the Home Page
+
 ```bash
 # Open in browser
 http://127.0.0.1:8000/home/
@@ -771,7 +813,7 @@ http://127.0.0.1:8000/swagger/
 - You can see the actual API request URL and response
 - Use the "Models" section at the bottom to see the data structure
 - All endpoints are color-coded: GET (blue), POST (green), PUT (orange), DELETE (red)
-- For development, its always best to utilize a dockerized form of your backend for ease of development
+- For development, its always best to utilize a dockerized form of your backend for ease of development. This becomes especially important when you incorporate a frontend with it.
 
 ---
 
