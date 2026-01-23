@@ -108,8 +108,7 @@ EXPOSE 8000
 
 # Run migrations, load data, then start the server
 # Note: Only the last CMD is executed, so we use shell form to chain commands
-CMD python manage.py makemigrations && \
-    python manage.py migrate && \
+CMD python manage.py migrate && \
     # Run this command manually
     # python manage.py loaddata initial_data && \
     python manage.py runserver 0.0.0.0:8000
